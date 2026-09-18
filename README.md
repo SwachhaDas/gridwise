@@ -3,6 +3,25 @@
 LLM-assisted smart-campus energy optimization service for the
 [BUP CSE Fest 2026 GridWise preliminary](https://bup.edu.bd).
 
+## Live Public URL
+
+**Base URL:** `https://surround-ion-silent.ngrok-free.dev`
+
+**Endpoints:**
+
+- `GET  /health` → `{"status":"ok"}`
+- `POST /optimize-energy` → 24-hour schedule
+
+**Quick test:**
+
+```bash
+curl https://surround-ion-silent.ngrok-free.dev/health
+# -> {"status":"ok"}
+```
+
+> ⚠️ ngrok free tier — the URL is session-based and may rotate if the
+> tunnel restarts. The local server on port 8000 remains the source of truth.
+
 ## Architecture
 
 ```
@@ -39,7 +58,7 @@ LLM-assisted smart-campus energy optimization service for the
 
 1. **LLM interpreter** (`app/llm.py`) — a single chat-completion call converts
    every operator note into a structured directive. Uses an OpenAI-compatible
-   provider (Groq, DeepSeek, OpenAI, Gemini via OpenRouter, etc).
+   provider (Groq, DeepSeek, OpenAI, OpenRouter, etc).
 2. **Deterministic guardrails** (`app/guardrails.py`) — repairs malformed LLM
    output (unknown types → `no_op`, dedupes/clamps hours, clamps factors,
    reindexes note order, fills missing entries).
@@ -69,7 +88,7 @@ LLM-assisted smart-campus energy optimization service for the
 | `LOG_LEVEL`          | ❌       | `INFO`                         | Python logging level                                        |
 | `LLM_TIMEOUT_S`      | ❌       | `20`                           | Per-request LLM timeout in seconds                          |
 
-### Example `.env` (Groq)
+### Example `.env` (Groq — used for this submission)
 
 ```
 DEEPSEEK_API_KEY=gsk_xxx
@@ -91,7 +110,7 @@ PORT=8000
 
 ```bash
 # 1. Clone and enter the repo
-git clone <your-repo-url> gridwise
+git clone https://github.com/SwachhaDas/gridwise.git
 cd gridwise
 
 # 2. Create and activate a virtual environment
@@ -124,7 +143,7 @@ curl http://localhost:8000/health
 curl http://localhost:8000/health
 ```
 
-### Optimize
+### Optimize (local)
 
 ```bash
 curl -X POST http://localhost:8000/optimize-energy \
@@ -172,6 +191,15 @@ curl -X POST http://localhost:8000/optimize-energy \
   }'
 ```
 
+### Optimize (public URL via ngrok)
+
+```bash
+curl -X POST https://surround-ion-silent.ngrok-free.dev/optimize-energy \
+  -H "Content-Type: application/json" \
+  -H "ngrok-skip-browser-warning: true" \
+  -d '{ ... same JSON as above ... }'
+```
+
 ## Running the Sample Suite
 
 With the server running locally:
@@ -185,16 +213,25 @@ samples should PASS.
 
 ## Docker
 
+The repository ships with a production-ready `Dockerfile` at the project root.
+
 ### Build
 
 ```bash
-docker build -t gridwise:1.0.0 .
+docker build -t swachhadas/gridwise:1.0.0 .
 ```
 
-### Run
+### Run (from local build)
 
 ```bash
-docker run --rm -p 8000:8000 --env-file .env gridwise:1.0.0
+docker run --rm -p 8000:8000 --env-file .env swachhadas/gridwise:1.0.0
+```
+
+### Pull from Docker Hub (if published)
+
+```bash
+docker pull swachhadas/gridwise:1.0.0
+docker run --rm -p 8000:8000 --env-file .env swachhadas/gridwise:1.0.0
 ```
 
 Then:
@@ -226,6 +263,23 @@ pytest -q
 
 (If no tests are present, this will be a no-op.)
 
+## Test Results
+
+All 10 public samples pass:
+
+| # | Sample | Directive(s) Interpreted | Total Cost (BDT) |
+|---|--------|--------------------------|------------------|
+| 1 | Solar reduction + distractor | solar_reduction(2h), no_op | 37960.00 |
+| 2 | No-charge maintenance | no_charge_window(3h) | 42885.00 |
+| 3 | Battery reserve as % | minimum_battery_reserve(3h) | 35480.00 |
+| 4 | No-discharge protection | no_discharge_window(2h) | 40495.00 |
+| 5 | Feeder grid cap | max_grid_window(3h) | 33950.00 |
+| 6 | Solar + no-charge + distractor | solar_reduction(2h), no_charge_window(2h) | 34090.00 |
+| 7 | Reserve + transformer cap | minimum_battery_reserve(4h), max_grid_window(2h) | 38550.00 |
+| 8 | Charge + discharge outages | no_charge_window(2h), no_discharge_window(2h) | 37665.00 |
+| 9 | 80% reduction paraphrase | solar_reduction(3h), no_op | 34873.00 |
+| 10 | Reserve + grid cap + distractor | minimum_battery_reserve(4h), max_grid_window(3h) | 41620.00 |
+
 ## Known Limitations
 
 - The LLM provider must be reachable during the entire evaluation window.
@@ -235,6 +289,7 @@ pytest -q
   extremely large instances; the current problem size is fixed at 24 hours.
 - The service assumes the harness supplies synthetic data only (no live
   utility/billing/personal data).
+- ngrok free-tier URLs are session-based and may rotate.
 
 ## Third-Party Credits
 
@@ -242,9 +297,10 @@ pytest -q
 - **Pydantic v2** — data validation
 - **PuLP + CBC** — linear programming solver
 - **OpenAI Python SDK** — OpenAI-compatible client used for Groq / DeepSeek /
-  OpenRouter / Gemini endpoints
+  OpenRouter endpoints
 - **python-dotenv** — `.env` loading
 - **httpx** — HTTP client used by the sample runner
+- **Groq** — LLM inference provider (`openai/gpt-oss-20b`)
 
 ## License
 
