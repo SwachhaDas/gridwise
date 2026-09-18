@@ -3,9 +3,10 @@
 LLM-assisted smart-campus energy optimization service for the
 [BUP CSE Fest 2026 GridWise preliminary](https://bup.edu.bd).
 
-## Live Public URL
+## Live Public URLs
 
-**Base URL:** `https://surround-ion-silent.ngrok-free.dev`
+- **Primary (permanent, Render):** https://gridwise-mpe9.onrender.com
+- **Backup (ngrok, session-based):** https://surround-ion-silent.ngrok-free.dev
 
 **Endpoints:**
 
@@ -15,12 +16,13 @@ LLM-assisted smart-campus energy optimization service for the
 **Quick test:**
 
 ```bash
-curl https://surround-ion-silent.ngrok-free.dev/health
+curl https://gridwise-mpe9.onrender.com/health
 # -> {"status":"ok"}
 ```
 
-> ⚠️ ngrok free tier — the URL is session-based and may rotate if the
-> tunnel restarts. The local server on port 8000 remains the source of truth.
+> ⚠️ Render free tier spins down after 15 minutes of inactivity. First
+> request after a sleep period may take 30–50 seconds to wake up.
+> UptimeRobot is used to keep the service warm.
 
 ## Architecture
 
@@ -58,7 +60,7 @@ curl https://surround-ion-silent.ngrok-free.dev/health
 
 1. **LLM interpreter** (`app/llm.py`) — a single chat-completion call converts
    every operator note into a structured directive. Uses an OpenAI-compatible
-   provider (Groq, DeepSeek, OpenAI, OpenRouter, etc).
+   provider (Groq in this submission, model `openai/gpt-oss-20b`).
 2. **Deterministic guardrails** (`app/guardrails.py`) — repairs malformed LLM
    output (unknown types → `no_op`, dedupes/clamps hours, clamps factors,
    reindexes note order, fills missing entries).
@@ -82,13 +84,14 @@ curl https://surround-ion-silent.ngrok-free.dev/health
 | Variable             | Required | Default                        | Notes                                                       |
 | -------------------- | -------- | ------------------------------ | ----------------------------------------------------------- |
 | `DEEPSEEK_API_KEY`   | ✅       | —                              | API key for the LLM provider                                |
-| `DEEPSEEK_BASE_URL`  | ❌       | `https://api.deepseek.com`     | OpenAI-compatible base URL (e.g. Groq, OpenRouter)          |
+| `DEEPSEEK_BASE_URL`  | ❌       | `https://api.deepseek.com`     | OpenAI-compatible base URL (Groq, OpenRouter, etc.)         |
 | `DEEPSEEK_MODEL`     | ❌       | `deepseek-chat`                | Model identifier for the provider                           |
 | `PORT`               | ❌       | `8000`                         | HTTP port to bind                                           |
 | `LOG_LEVEL`          | ❌       | `INFO`                         | Python logging level                                        |
 | `LLM_TIMEOUT_S`      | ❌       | `20`                           | Per-request LLM timeout in seconds                          |
+| `PYTHON_VERSION`     | ❌       | (system default)               | Pin to `3.11.9` for Render (avoid 3.13 wheel issues)        |
 
-### Example `.env` (Groq — used for this submission)
+### Example `.env` (Groq — used in this submission)
 
 ```
 DEEPSEEK_API_KEY=gsk_xxx
@@ -191,12 +194,11 @@ curl -X POST http://localhost:8000/optimize-energy \
   }'
 ```
 
-### Optimize (public URL via ngrok)
+### Optimize (public Render URL)
 
 ```bash
-curl -X POST https://surround-ion-silent.ngrok-free.dev/optimize-energy \
+curl -X POST https://gridwise-mpe9.onrender.com/optimize-energy \
   -H "Content-Type: application/json" \
-  -H "ngrok-skip-browser-warning: true" \
   -d '{ ... same JSON as above ... }'
 ```
 
@@ -210,58 +212,6 @@ python tests/run_samples.py http://localhost:8000
 
 Expected output: a PASS/FAIL table with recalculated cost per sample. All 10
 samples should PASS.
-
-## Docker
-
-The repository ships with a production-ready `Dockerfile` at the project root.
-
-### Build
-
-```bash
-docker build -t swachhadas/gridwise:1.0.0 .
-```
-
-### Run (from local build)
-
-```bash
-docker run --rm -p 8000:8000 --env-file .env swachhadas/gridwise:1.0.0
-```
-
-### Pull from Docker Hub (if published)
-
-```bash
-docker pull swachhadas/gridwise:1.0.0
-docker run --rm -p 8000:8000 --env-file .env swachhadas/gridwise:1.0.0
-```
-
-Then:
-
-```bash
-curl http://localhost:8000/health
-# -> {"status":"ok"}
-```
-
-The image does **not** bake in secrets — pass them at runtime via
-`--env-file` or `-e`.
-
-## Deployment (Render / Railway / Fly.io)
-
-1. Push the repo to GitHub (keep `.env` out of the repo — `.gitignore` already
-   excludes it).
-2. Create a new Web Service and point it at the repo.
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Set env vars: `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`,
-   and optionally `PORT`.
-6. Deploy and confirm `GET /health` returns `{"status":"ok"}`.
-
-## Testing
-
-```bash
-pytest -q
-```
-
-(If no tests are present, this will be a no-op.)
 
 ## Test Results
 
@@ -280,6 +230,46 @@ All 10 public samples pass:
 | 9 | 80% reduction paraphrase | solar_reduction(3h), no_op | 34873.00 |
 | 10 | Reserve + grid cap + distractor | minimum_battery_reserve(4h), max_grid_window(3h) | 41620.00 |
 
+## Deployment on Render
+
+The service is deployed on Render as a Python 3 web service.
+
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Python Version:** `3.11.9` (pinned via `PYTHON_VERSION` env var — 3.13+
+  lacks prebuilt `pydantic-core` wheels for our pinned version)
+- **Instance Type:** Free
+- **Region:** Singapore
+
+**Permanent URL:** https://gridwise-mpe9.onrender.com
+
+## Docker
+
+The repository ships with a production-ready `Dockerfile` at the project root.
+
+### Build
+
+```bash
+docker build -t swachhadas/gridwise:1.0.0 .
+```
+
+### Run
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env swachhadas/gridwise:1.0.0
+```
+
+The image does **not** bake in secrets — pass them at runtime via
+`--env-file` or `-e`.
+
+## Testing
+
+```bash
+pytest -q
+```
+
+(If no tests are present, this will be a no-op.)
+
 ## Known Limitations
 
 - The LLM provider must be reachable during the entire evaluation window.
@@ -289,6 +279,9 @@ All 10 public samples pass:
   extremely large instances; the current problem size is fixed at 24 hours.
 - The service assumes the harness supplies synthetic data only (no live
   utility/billing/personal data).
+- Render free tier instances spin down after 15 minutes of inactivity. The
+  first request after a sleep period may take 30–50 seconds. UptimeRobot is
+  used to keep the instance warm.
 - ngrok free-tier URLs are session-based and may rotate.
 
 ## Third-Party Credits
@@ -301,6 +294,7 @@ All 10 public samples pass:
 - **python-dotenv** — `.env` loading
 - **httpx** — HTTP client used by the sample runner
 - **Groq** — LLM inference provider (`openai/gpt-oss-20b`)
+- **Render** — hosting platform
 
 ## License
 
